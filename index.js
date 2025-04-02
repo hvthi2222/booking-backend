@@ -20,7 +20,7 @@ app.get("/api/bookings", async (req, res) => {
     await poolConnect;
     const date = req.query.date;
 
-    let query = "SELECT * FROM bookings";
+    let query = "SELECT id, name, phone, email, date, shift FROM bookings";
     if (date) {
       query += " WHERE CONVERT(date, date) = @date";
     }
@@ -41,38 +41,34 @@ app.get("/api/bookings", async (req, res) => {
 
 // Đặt lịch + gửi email
 app.post("/api/bookings", async (req, res) => {
-  let { name, phone, email, date, time } = req.body;
+  const { name, phone, email, date, shift } = req.body;
+
+  if (!["sáng", "chiều", "tối"].includes(shift)) {
+    return res.status(400).json({ message: "Ca không hợp lệ!" });
+  }
 
   try {
-    console.log("🕒 Time nhận được từ React:", time);
-
-    const parsed = new Date(`2000-01-01T${time}`);
-    if (isNaN(parsed.getTime())) {
-      return res.status(400).json({ message: "Thời gian không hợp lệ!" });
-    }
-
-    time = new Date(`1970-01-01T${time}`);
-
     await poolConnect;
 
     const request = pool.request();
     request.input("name", sql.NVarChar(100), name);
     request.input("phone", sql.NVarChar(20), phone);
+    request.input("email", sql.NVarChar(100), email);
     request.input("date", sql.Date, date);
-    request.input("time", sql.Time, time);
+    request.input("shift", sql.NVarChar(10), shift);
 
-    await request.query(
-      "INSERT INTO bookings (name, phone, date, time) VALUES (@name, @phone, @date, @time)"
-    );
+    await request.query(`
+      INSERT INTO bookings (name, phone, email, date, shift)
+      VALUES (@name, @phone, @email, @date, @shift)
+    `);
 
-    console.log("✅ Lưu thành công:", { name, phone, email, date, time });
+    console.log("✅ Lưu thành công:", { name, phone, email, date, shift });
 
-    // Gửi email xác nhận
     await sendConfirmationEmail(email, {
       name,
       phone,
       date,
-      time: time.toTimeString().slice(0, 5),
+      time: shift, // ghi 'ca' thay vì giờ
     });
 
     res.status(201).json({ message: "Đặt lịch thành công và đã gửi email!" });
@@ -98,24 +94,7 @@ app.delete("/api/bookings/:id", async (req, res) => {
   }
 });
 
-// Cập nhật trạng thái
-app.put("/api/bookings/:id/status", async (req, res) => {
-  const { id } = req.params;
-  const { status } = req.body;
-
-  try {
-    await poolConnect;
-    await pool.request()
-      .input("id", sql.Int, id)
-      .input("status", sql.NVarChar(20), status)
-      .query("UPDATE bookings SET status = @status WHERE id = @id");
-
-    res.status(200).json({ message: `Cập nhật trạng thái: ${status}` });
-  } catch (err) {
-    console.error("❌ Lỗi cập nhật trạng thái:", err);
-    res.status(500).json({ message: "Lỗi server khi cập nhật trạng thái!" });
-  }
-});
+// (Không còn cần cập nhật trạng thái nữa)
 
 app.listen(PORT, () => {
   console.log(`🚀 Server đang chạy tại http://localhost:${PORT}`);
